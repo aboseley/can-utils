@@ -61,6 +61,7 @@
 
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <syslog.h>
 
 #include "terminal.h"
 #include "lib.h"
@@ -117,6 +118,7 @@ void print_usage(char *prg)
 	fprintf(stderr, "         -B <can>    (bridge mode - like '-b' with disabled loopback)\n");
 	fprintf(stderr, "         -u <usecs>  (delay bridge forwarding by <usecs> microseconds)\n");
 	fprintf(stderr, "         -l          (log CAN-frames into file. Sets '-s %d' by default)\n", SILENT_ON);
+	fprintf(stderr, "         -k          (output to syslog\n");
 	fprintf(stderr, "         -L          (use log file format on stdout)\n");
 	fprintf(stderr, "         -n <count>  (terminate after receiption of <count> CAN frames)\n");
 	fprintf(stderr, "         -r <size>   (set socket receive buffer to <size>)\n");
@@ -214,6 +216,7 @@ int main(int argc, char **argv)
 	unsigned char color = 0;
 	unsigned char view = 0;
 	unsigned char log = 0;
+	unsigned char log_to_syslog = 0;
 	unsigned char logfrmt = 0;
 	int count = 0;
 	int rcvbuf_size = 0;
@@ -242,7 +245,7 @@ int main(int argc, char **argv)
 	last_tv.tv_sec  = 0;
 	last_tv.tv_usec = 0;
 
-	while ((opt = getopt(argc, argv, "t:ciaSs:b:B:u:ldxLn:r:heT:?")) != -1) {
+	while ((opt = getopt(argc, argv, "t:ciaSs:b:B:u:lkdxLn:r:heT:?")) != -1) {
 		switch (opt) {
 		case 't':
 			timestamp = optarg[0];
@@ -327,6 +330,10 @@ int main(int argc, char **argv)
 
 		case 'l':
 			log = 1;
+			break;
+
+		case 'k':
+			log_to_syslog = 1;
 			break;
 
 		case 'd':
@@ -704,14 +711,24 @@ int main(int argc, char **argv)
 				if (frame.can_id & CAN_EFF_FLAG)
 					view |= CANLIB_VIEW_INDENT_SFF;
 
-				if (log) {
+				if (log || log_to_syslog) {
 					char buf[CL_CFSZ]; /* max length */
 
 					/* log CAN frame with absolute timestamp & device */
 					sprint_canframe(buf, &frame, 0, maxdlen);
-					fprintf(logfile, "(%010ld.%06ld) %*s %s\n",
-						tv.tv_sec, tv.tv_usec,
-						max_devname_len, devname[idx], buf);
+					if (log){
+						fprintf(logfile,
+								  "(%010ld.%06ld) %*s %s\n",
+								  tv.tv_sec, tv.tv_usec,
+								  max_devname_len, devname[idx], buf);
+					}
+					if (log_to_syslog)
+					{
+						syslog(LOG_DEBUG,
+								 "(%010ld.%06ld) %*s %s\n",
+								 tv.tv_sec, tv.tv_usec,
+								 max_devname_len, devname[idx], buf);
+					}
 				}
 
 				if (logfrmt) {
